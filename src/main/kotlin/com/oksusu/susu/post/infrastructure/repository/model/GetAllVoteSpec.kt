@@ -1,11 +1,11 @@
 package com.oksusu.susu.post.infrastructure.repository.model
 
-import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.KeysetScrollPosition
 
 class GetAllVoteSpec(
     val uid: Long,
     val searchSpec: SearchVoteSpec,
-    val userBlockIds: List<Long>,
-    val postBlockIds: List<Long>,
-    val pageable: Pageable,
+    val userBlockIds: Set<Long>,
+    val postBlockIds: Set<Long>,
+    val keysetScrollPosition: KeysetScrollPosition,
 )

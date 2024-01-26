@@ -8,6 +8,7 @@ class SearchVoteSpec(
     val mine: Boolean?,
     val sortType: VoteSortType,
     val categoryId: Long?,
+    val size: Int,
 ) {
     companion object {
         fun from(request: SearchVoteRequest): SearchVoteSpec {
@@ -15,7 +16,8 @@ class SearchVoteSpec(
                 content = request.content,
                 mine = request.mine,
                 sortType = request.sortType ?: VoteSortType.LATEST,
-                categoryId = request.categoryId
+                categoryId = request.postCategoryId,
+                size = request.size ?: 10
             )
         }
 
@@ -24,7 +26,8 @@ class SearchVoteSpec(
                 content = null,
                 mine = null,
                 sortType = VoteSortType.POPULAR,
-                categoryId = null
+                categoryId = null,
+                size = 10
             )
         }
     }

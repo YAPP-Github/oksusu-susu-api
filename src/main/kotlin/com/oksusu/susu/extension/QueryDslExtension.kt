@@ -6,11 +6,7 @@ import com.querydsl.core.types.dsl.BooleanExpression
 import com.querydsl.core.types.dsl.NumberPath
 import com.querydsl.core.types.dsl.StringPath
 import com.querydsl.jpa.impl.JPAQuery
-import org.springframework.data.domain.Page
-import org.springframework.data.domain.PageImpl
-import org.springframework.data.domain.Pageable
-import org.springframework.data.domain.Slice
-import org.springframework.data.domain.SliceImpl
+import org.springframework.data.domain.*
 import org.springframework.data.jpa.repository.support.Querydsl
 
 fun <T> Querydsl?.execute(query: JPAQuery<T>, pageable: Pageable): Page<T> {
@@ -39,6 +35,32 @@ fun <T> Querydsl?.executeSlice(query: JPAQuery<T>, pageable: Pageable): Slice<T>
         } ?: throw SusuException(ErrorCode.QUERY_DSL_NOT_EXISTS_ERROR)
 }
 
+fun <T> JPAQuery<T>.executeWindow(size: Int, keysetScrollPosition: KeysetScrollPosition): Window<T> {
+    return this.limit(size + 1L).fetch()
+        .run {
+            var hasNext = false
+            if (this.size > size) {
+                hasNext = true
+                this.removeAt(size)
+            }
+            Window.from(
+                this,
+                { idx ->
+                    val idxObject = this[idx]
+                    val propertyValue = idxObject!!.getPropertyValues()
+                    val curKeys = keysetScrollPosition.keys
+                    val idxKeys = curKeys.map { curKey -> curKey.key to propertyValue[curKey.key] }.toMap()
+
+                    when (keysetScrollPosition.direction) {
+                        ScrollPosition.Direction.FORWARD -> ScrollPosition.forward(idxKeys)
+                        ScrollPosition.Direction.BACKWARD -> ScrollPosition.backward(idxKeys)
+                    }
+                },
+                hasNext
+            )
+        }
+}
+
 fun StringPath.isEquals(parameter: String?): BooleanExpression? {
     return parameter?.let { this.eq(parameter) }
 }
@@ -53,4 +75,8 @@ fun StringPath.isContains(parameter: String?): BooleanExpression? {
 
 fun NumberPath<Long>.isIn(parameters: Set<Long>?): BooleanExpression? {
     return parameters.takeUnless { params -> params.isNullOrEmpty() }?.let { params -> this.`in`(params) }
+}
+
+fun NumberPath<Long>.isNotIn(parameters: Set<Long>?): BooleanExpression? {
+    return parameters.takeUnless { params -> params.isNullOrEmpty() }?.let { params -> this.notIn(params) }
 }

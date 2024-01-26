@@ -1,12 +1,8 @@
 package com.oksusu.susu.post.presentation
 
 import com.oksusu.susu.auth.model.AuthUser
-import com.oksusu.susu.common.dto.SusuPageRequest
 import com.oksusu.susu.config.web.SwaggerTag
-import com.oksusu.susu.extension.wrapCreated
-import com.oksusu.susu.extension.wrapOk
-import com.oksusu.susu.extension.wrapSlice
-import com.oksusu.susu.extension.wrapVoid
+import com.oksusu.susu.extension.*
 import com.oksusu.susu.post.application.VoteFacade
 import com.oksusu.susu.post.model.request.CreateVoteHistoryRequest
 import com.oksusu.susu.post.model.request.CreateVoteRequest
@@ -36,8 +32,8 @@ class VoteResource(
     suspend fun searchVotes(
         user: AuthUser,
         @ParameterObject searchRequest: SearchVoteRequest,
-        @ParameterObject sliceRequest: SusuPageRequest,
-    ) = voteFacade.getAllVotes(user, searchRequest, sliceRequest).wrapSlice()
+        @RequestParam cursor: String?,
+    ) = voteFacade.getAllVotes(user, searchRequest, cursor).wrapWindow()
 
     @Operation(summary = "투표 하나 조회")
     @GetMapping("/{id}")
@@ -69,10 +65,10 @@ class VoteResource(
         @RequestBody request: UpdateVoteRequest,
     ) = voteFacade.update(user, id, request).wrapOk()
 
-    @Operation(summary = "가장 인기 있는 투표 검색")
-    @GetMapping("/popular")
-    suspend fun getPopularVotes(
-        user: AuthUser,
-        @RequestParam(defaultValue = "5") size: Int,
-    ) = voteFacade.getPopularVotes(user, size).wrapOk()
+//    @Operation(summary = "가장 인기 있는 투표 검색")
+//    @GetMapping("/popular")
+//    suspend fun getPopularVotes(
+//        user: AuthUser,
+//        @RequestParam(defaultValue = "5") size: Int,
+//    ) = voteFacade.getPopularVotes(user, size).wrapOk()
 }

@@ -3,17 +3,20 @@ package com.oksusu.susu.post.application
 import arrow.fx.coroutines.parZip
 import com.oksusu.susu.auth.model.AuthUser
 import com.oksusu.susu.block.application.BlockService
-import com.oksusu.susu.common.dto.SusuPageRequest
+import com.oksusu.susu.common.util.toTypeReference
 import com.oksusu.susu.config.database.TransactionTemplates
 import com.oksusu.susu.count.application.CountService
 import com.oksusu.susu.count.domain.Count
 import com.oksusu.susu.count.domain.vo.CountTargetType
 import com.oksusu.susu.extension.coExecute
 import com.oksusu.susu.extension.coExecuteOrNull
+import com.oksusu.susu.extension.decodeBase64
 import com.oksusu.susu.post.domain.Post
 import com.oksusu.susu.post.domain.VoteHistory
 import com.oksusu.susu.post.domain.VoteOption
 import com.oksusu.susu.post.domain.vo.PostType
+import com.oksusu.susu.post.infrastructure.repository.PostRepository
+import com.oksusu.susu.post.infrastructure.repository.model.GetAllVoteCursorModel
 import com.oksusu.susu.post.infrastructure.repository.model.GetAllVoteSpec
 import com.oksusu.susu.post.infrastructure.repository.model.SearchVoteSpec
 import com.oksusu.susu.post.model.VoteCountModel
@@ -25,13 +28,14 @@ import com.oksusu.susu.post.model.request.UpdateVoteRequest
 import com.oksusu.susu.post.model.response.CreateAndUpdateVoteResponse
 import com.oksusu.susu.post.model.response.VoteAndOptionsResponse
 import com.oksusu.susu.post.model.response.VoteAndOptionsWithCountResponse
-import com.oksusu.susu.post.model.response.VoteWithCountResponse
 import com.oksusu.susu.post.model.vo.SearchVoteRequest
-import com.oksusu.susu.post.model.vo.VoteSortType
 import com.oksusu.susu.user.application.UserService
 import kotlinx.coroutines.*
-import org.springframework.data.domain.Slice
+import org.springframework.data.domain.KeysetScrollPosition
+import org.springframework.data.domain.ScrollPosition
+import org.springframework.data.domain.Window
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 
 @Service
 class VoteFacade(
@@ -44,6 +48,8 @@ class VoteFacade(
     private val postCategoryService: PostCategoryService,
     private val blockService: BlockService,
     private val countService: CountService,
+
+    private val postRepository: PostRepository,
 ) {
     private val logger = mu.KotlinLogging.logger { }
 
@@ -79,27 +85,36 @@ class VoteFacade(
     suspend fun getAllVotes(
         user: AuthUser,
         searchRequest: SearchVoteRequest,
-        pageRequest: SusuPageRequest,
-    ): Slice<VoteAndOptionsResponse> {
-        val searchSpec = SearchVoteSpec.from(searchRequest)
-
+        cursor: String?,
+    ): Pair<Window<VoteAndOptionsResponse>, String?> {
         val userAndPostBlockIdModel = blockService.getUserAndPostBlockTargetIds(user.id)
+
+        val searchSpec = SearchVoteSpec.from(searchRequest)
+        val keysetScrollPosition = cursor?.decodeBase64(toTypeReference<GetAllVoteCursorModel>())
+            ?.toKeysetScrollPosition(ScrollPosition.Direction.FORWARD)
+            ?: getDefaultAllVoteScrollPosition()
 
         val getAllVoteSpec = GetAllVoteSpec(
             uid = user.id,
             searchSpec = searchSpec,
             userBlockIds = userAndPostBlockIdModel.userBlockIds,
             postBlockIds = userAndPostBlockIdModel.postBlockIds,
-            pageable = pageRequest.toDefault()
+            keysetScrollPosition = keysetScrollPosition
         )
 
-        val votes = when (searchSpec.sortType) {
-            VoteSortType.LATEST -> voteService.getAllVotesExceptBlock(getAllVoteSpec)
-            VoteSortType.POPULAR -> voteService.getAllVotesOrderByPopular(getAllVoteSpec)
-        }
+        val votes = voteService.getAllVotesExceptBlock(spec = getAllVoteSpec)
+
+//        val votes = when (searchSpec.sortType) {
+//            VoteSortType.LATEST -> voteService.getAllVotesExceptBlock(getAllVoteSpec)
+//            VoteSortType.POPULAR -> voteService.getAllVotesOrderByPopular(getAllVoteSpec)
+//        }
 
         val optionModels = voteOptionService.getOptionsByPostIdIn(votes.content.map { vote -> vote.id })
             .map { VoteOptionModel.from(it) }
+
+        val nextCursor = votes.content.size.takeIf { size -> size > 0 }?.let { size ->
+            GetAllVoteCursorModel.toBase64Model(votes.positionAt(size - 1) as KeysetScrollPosition)
+        }
 
         return votes.map { vote ->
             VoteAndOptionsResponse.of(
@@ -107,7 +122,15 @@ class VoteFacade(
                 options = optionModels.filter { option -> option.postId == vote.id },
                 postCategoryModel = postCategoryService.getCategory(vote.postCategoryId)
             )
-        }
+        } to nextCursor
+    }
+
+    fun getDefaultAllVoteScrollPosition(): KeysetScrollPosition {
+        val keys = mutableMapOf<String, Any>("id" to 1L)
+
+        keys["createdAt"] = LocalDateTime.now()
+
+        return ScrollPosition.forward(keys)
     }
 
     suspend fun getVote(user: AuthUser, id: Long): VoteAndOptionsWithCountResponse {
@@ -205,23 +228,23 @@ class VoteFacade(
         }
     }
 
-    suspend fun getPopularVotes(user: AuthUser, size: Int): List<VoteWithCountResponse> {
-        val userAndPostBlockIdModel = blockService.getUserAndPostBlockTargetIds(user.id)
-
-        val voteAndCountModels = voteService.getPopularVotesExceptBlock(
-            uid = user.id,
-            userBlockIds = userAndPostBlockIdModel.userBlockIds,
-            postBlockIds = userAndPostBlockIdModel.postBlockIds,
-            size = size
-        )
-
-        return voteAndCountModels.map { model ->
-            VoteWithCountResponse.of(
-                model = model,
-                postCategoryModel = postCategoryService.getCategory(model.post.postCategoryId)
-            )
-        }
-    }
+//    suspend fun getPopularVotes(user: AuthUser, size: Int): List<VoteWithCountResponse> {
+//        val userAndPostBlockIdModel = blockService.getUserAndPostBlockTargetIds(user.id)
+//
+//        val voteAndCountModels = voteService.getPopularVotesExceptBlock(
+//            uid = user.id,
+//            userBlockIds = userAndPostBlockIdModel.userBlockIds,
+//            postBlockIds = userAndPostBlockIdModel.postBlockIds,
+//            size = size
+//        )
+//
+//        return voteAndCountModels.map { model ->
+//            VoteWithCountResponse.of(
+//                model = model,
+//                postCategoryModel = postCategoryService.getCategory(model.post.postCategoryId)
+//            )
+//        }
+//    }
 
     suspend fun update(user: AuthUser, id: Long, request: UpdateVoteRequest): CreateAndUpdateVoteResponse {
         return parZip(

@@ -4,7 +4,8 @@ data class SearchVoteRequest(
     val content: String?,
     val mine: Boolean?,
     val sortType: VoteSortType?,
-    val categoryId: Long?,
+    val postCategoryId: Long?,
+    val size: Int?,
 )
 
 enum class VoteSortType {
