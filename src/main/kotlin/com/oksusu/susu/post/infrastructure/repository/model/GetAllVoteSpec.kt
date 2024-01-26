@@ -7,5 +7,5 @@ class GetAllVoteSpec(
     val searchSpec: SearchVoteSpec,
     val userBlockIds: Set<Long>,
     val postBlockIds: Set<Long>,
-    val keysetScrollPosition: KeysetScrollPosition,
+    var keysetScrollPosition: KeysetScrollPosition,
 )

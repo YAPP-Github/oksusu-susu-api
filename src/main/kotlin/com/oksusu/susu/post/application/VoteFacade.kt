@@ -3,20 +3,18 @@ package com.oksusu.susu.post.application
 import arrow.fx.coroutines.parZip
 import com.oksusu.susu.auth.model.AuthUser
 import com.oksusu.susu.block.application.BlockService
-import com.oksusu.susu.common.util.toTypeReference
 import com.oksusu.susu.config.database.TransactionTemplates
 import com.oksusu.susu.count.application.CountService
 import com.oksusu.susu.count.domain.Count
 import com.oksusu.susu.count.domain.vo.CountTargetType
 import com.oksusu.susu.extension.coExecute
 import com.oksusu.susu.extension.coExecuteOrNull
-import com.oksusu.susu.extension.decodeBase64
 import com.oksusu.susu.post.domain.Post
 import com.oksusu.susu.post.domain.VoteHistory
 import com.oksusu.susu.post.domain.VoteOption
 import com.oksusu.susu.post.domain.vo.PostType
 import com.oksusu.susu.post.infrastructure.repository.PostRepository
-import com.oksusu.susu.post.infrastructure.repository.model.GetAllVoteCursorModel
+import com.oksusu.susu.post.infrastructure.repository.model.AllVoteCursorModel
 import com.oksusu.susu.post.infrastructure.repository.model.GetAllVoteSpec
 import com.oksusu.susu.post.infrastructure.repository.model.SearchVoteSpec
 import com.oksusu.susu.post.model.VoteCountModel
@@ -29,13 +27,12 @@ import com.oksusu.susu.post.model.response.CreateAndUpdateVoteResponse
 import com.oksusu.susu.post.model.response.VoteAndOptionsResponse
 import com.oksusu.susu.post.model.response.VoteAndOptionsWithCountResponse
 import com.oksusu.susu.post.model.vo.SearchVoteRequest
+import com.oksusu.susu.post.model.vo.VoteSortType
 import com.oksusu.susu.user.application.UserService
-import kotlinx.coroutines.*
 import org.springframework.data.domain.KeysetScrollPosition
 import org.springframework.data.domain.ScrollPosition
 import org.springframework.data.domain.Window
 import org.springframework.stereotype.Service
-import java.time.LocalDateTime
 
 @Service
 class VoteFacade(
@@ -90,31 +87,22 @@ class VoteFacade(
         val userAndPostBlockIdModel = blockService.getUserAndPostBlockTargetIds(user.id)
 
         val searchSpec = SearchVoteSpec.from(searchRequest)
-        val keysetScrollPosition = cursor?.decodeBase64(toTypeReference<GetAllVoteCursorModel>())
-            ?.toKeysetScrollPosition(ScrollPosition.Direction.FORWARD)
-            ?: getDefaultAllVoteScrollPosition()
 
         val getAllVoteSpec = GetAllVoteSpec(
             uid = user.id,
             searchSpec = searchSpec,
             userBlockIds = userAndPostBlockIdModel.userBlockIds,
             postBlockIds = userAndPostBlockIdModel.postBlockIds,
-            keysetScrollPosition = keysetScrollPosition
+            keysetScrollPosition = ScrollPosition.keyset()
         )
 
-        val votes = voteService.getAllVotesExceptBlock(spec = getAllVoteSpec)
-
-//        val votes = when (searchSpec.sortType) {
-//            VoteSortType.LATEST -> voteService.getAllVotesExceptBlock(getAllVoteSpec)
-//            VoteSortType.POPULAR -> voteService.getAllVotesOrderByPopular(getAllVoteSpec)
-//        }
+        val (votes, nextCursor) = when (searchSpec.sortType) {
+            VoteSortType.LATEST -> voteService.getAllVotesExceptBlock(getAllVoteSpec, cursor)
+            VoteSortType.POPULAR -> voteService.getAllVotesOrderByPopular(getAllVoteSpec, cursor)
+        }
 
         val optionModels = voteOptionService.getOptionsByPostIdIn(votes.content.map { vote -> vote.id })
             .map { VoteOptionModel.from(it) }
-
-        val nextCursor = votes.content.size.takeIf { size -> size > 0 }?.let { size ->
-            GetAllVoteCursorModel.toBase64Model(votes.positionAt(size - 1) as KeysetScrollPosition)
-        }
 
         return votes.map { vote ->
             VoteAndOptionsResponse.of(
@@ -123,14 +111,6 @@ class VoteFacade(
                 postCategoryModel = postCategoryService.getCategory(vote.postCategoryId)
             )
         } to nextCursor
-    }
-
-    fun getDefaultAllVoteScrollPosition(): KeysetScrollPosition {
-        val keys = mutableMapOf<String, Any>("id" to 1L)
-
-        keys["createdAt"] = LocalDateTime.now()
-
-        return ScrollPosition.forward(keys)
     }
 
     suspend fun getVote(user: AuthUser, id: Long): VoteAndOptionsWithCountResponse {

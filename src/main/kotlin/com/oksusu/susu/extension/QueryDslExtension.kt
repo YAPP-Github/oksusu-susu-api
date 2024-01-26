@@ -48,9 +48,12 @@ fun <T> JPAQuery<T>.executeWindow(size: Int, keysetScrollPosition: KeysetScrollP
                 { idx ->
                     val idxObject = this[idx]
                     val propertyValue = idxObject!!.getPropertyValues()
+                    println(propertyValue)
                     val curKeys = keysetScrollPosition.keys
                     val idxKeys = curKeys.map { curKey -> curKey.key to propertyValue[curKey.key] }.toMap()
 
+                    println(curKeys)
+                    println(idxKeys)
                     when (keysetScrollPosition.direction) {
                         ScrollPosition.Direction.FORWARD -> ScrollPosition.forward(idxKeys)
                         ScrollPosition.Direction.BACKWARD -> ScrollPosition.backward(idxKeys)
